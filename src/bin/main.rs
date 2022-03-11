@@ -1,4 +1,5 @@
 use std::io;
+use std::env;
 use std::io::prelude::*;
 use std::net::TcpListener;
 use std::net::TcpStream;
@@ -38,7 +39,7 @@ fn handle_connection(stream: TcpStream)  -> io::Result<()> {
         Ok(request) => {
             log_request(&request);
             let response = handle_request(&request);
-            buffer.write(response);
+            buffer.write(response.as_bytes());
         }
         Err(()) => {
             println!("Bad request: {}", &request_line)
@@ -64,7 +65,7 @@ fn parse_request(request: &mut String) -> Result<Request, ()> {
     };
     
     let path = match parts.next() {
-        Some(path) => path.trim().to_string(),
+        Some(path) => format!("./content{}", path.trim().to_string()),
         None => return Err(()),
     };
     let http_version = match parts.next() {
@@ -92,23 +93,30 @@ fn log_request(request: &Request) {
     );
 }
 
-fn handle_request(request: &Request) -> &u8 {
+fn handle_request(request: &Request) -> String {
+    println!("{}", request.path);
 
-    let content = std::fs::read_to_string(request.path);
+    let content = std::fs::read_to_string(request.path.clone());
+    // let temp = content.clone();
+
+    // println!("{:?}", content);
+
     let status_line = match content {
-        Ok(status_line) => "HTTP/1.1 200 OK",
-        Err(error) => "HTTP/1.1 404 NOT FOUND",
+        Ok(_) => "HTTP/1.1 200 OK",
+        Err(_) => "HTTP/1.1 404 NOT FOUND",   
     };
+
     let content = match content {
         Ok(content) => content,
-        Err(content) => std::fs::read_to_string("content/404.html").unwrap(),
+        Err(_) => std::fs::read_to_string("content/404.html").unwrap(),
     };
+    
     // let (status_line, filename) = if buffer.starts_with(get) {
     //     ("HTTP/1.1 200 OK", "content/index.html")
     
     let response = format!("{}\r\nContent-Length:{}\r\n\r\n{}", status_line, content.len(), content);
     
-    return response.as_bytes();
+    return response;
     // stream.write(response.as_bytes()).unwrap();
     // stream.flush().unwrap();
 }
