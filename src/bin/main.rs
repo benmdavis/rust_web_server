@@ -1,19 +1,30 @@
 use std::io;
-use std::env;
 use std::io::prelude::*;
 use std::net::TcpListener;
 use std::net::TcpStream;
-use std::fs::*;
 use server::ThreadPool;
 use chrono::{DateTime, Local};
 use bufstream::BufStream;
+
+
+struct Request {
+    http_version: String,
+    method: String,
+    path: String,
+    time: DateTime<Local>,
+}
+
+struct Response {
+    response: String,
+    content: Vec<u8>,
+}
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
     let pool = ThreadPool::new(4);
 
     for stream in listener.incoming() {
-        let stream = stream.unwrap(); //TOO build error handler
+        let stream = stream.unwrap(); 
         pool.execute(|| {
             handle_connection(stream).unwrap();
         });
@@ -22,24 +33,21 @@ fn main() {
 
 fn handle_connection(stream: TcpStream)  -> io::Result<()> {
     let mut buffer = BufStream::new(stream);
-    
-    // stream.read(&mut buffer).unwrap();
     let mut request_line = String::new();
-
-    // println!("Request: {}", String::from_utf8_lossy(&buffer[..]));
-    
-    // let (status_line, filename) = if buffer.starts_with(get) {
-    //     ("HTTP/1.1 200 OK", "content/index.html")
-    // } else {
-    //     ("HTTP/1.1 404 NOT FOUND", "content/404.html")
-    // };
     buffer.read_line(&mut request_line).unwrap();
     
     match parse_request(&mut request_line) {
         Ok(request) => {
             log_request(&request);
             let response = handle_request(&request);
-            buffer.write(response.as_bytes());
+            match buffer.write(response.response.as_bytes()) {
+                Ok(_) => println!("Response success"),
+                Err(_) => println!("Response failed")
+            }
+            match buffer.write(&response.content) {
+                Ok(_) => println!("Response success"),
+                Err(_) => println!("Response failed")
+            }
         }
         Err(()) => {
             println!("Bad request: {}", &request_line)
@@ -50,22 +58,16 @@ fn handle_connection(stream: TcpStream)  -> io::Result<()> {
  
 }
 
-struct Request {
-    http_version: String,
-    method: String,
-    path: String,
-    time: DateTime<Local>,
-}
-
 fn parse_request(request: &mut String) -> Result<Request, ()> {
     let mut parts = request.split(" ");
+     
     let method = match parts.next() {
         Some(method) => method.trim().to_string(),
         None => return Err(()),
     };
     
     let path = match parts.next() {
-        Some(path) => format!("./content{}", path.trim().to_string()),
+        Some(path) => format!("././content{}", path.trim().to_string()),
         None => return Err(()),
     };
     let http_version = match parts.next() {
@@ -80,7 +82,6 @@ fn parse_request(request: &mut String) -> Result<Request, ()> {
         path: path,
         time: time
     })
-
 }
 
 fn log_request(request: &Request) {
@@ -93,13 +94,11 @@ fn log_request(request: &Request) {
     );
 }
 
-fn handle_request(request: &Request) -> String {
+
+fn handle_request(request: &Request) -> Response {
     println!("{}", request.path);
 
-    let content = std::fs::read_to_string(request.path.clone());
-    // let temp = content.clone();
-
-    // println!("{:?}", content);
+    let content = std::fs::read(request.path.clone());
 
     let status_line = match content {
         Ok(_) => "HTTP/1.1 200 OK",
@@ -108,17 +107,18 @@ fn handle_request(request: &Request) -> String {
 
     let content = match content {
         Ok(content) => content,
-        Err(_) => std::fs::read_to_string("content/404.html").unwrap(),
+        Err(_) => {
+            println!("{}", content.unwrap_err());
+            std::fs::read("content/404.html").unwrap()
+        },
     };
-    
-    // let (status_line, filename) = if buffer.starts_with(get) {
-    //     ("HTTP/1.1 200 OK", "content/index.html")
-    
-    let response = format!("{}\r\nContent-Length:{}\r\n\r\n{}", status_line, content.len(), content);
-    
+    // println!("\n{}: {}\n", request.path, content);
+
+    // let response = format!("{}\r\nContent-Length:{}\r\n\r\n{}", status_line, content.len(), content);
+    let response = Response {
+        response: format!("{}\r\nContent-Length:{}\r\n\r\n", status_line, content.len()),
+        content: content
+    };
+
     return response;
-    // stream.write(response.as_bytes()).unwrap();
-    // stream.flush().unwrap();
 }
-//TODO: Pass request to handle_connection or something. 
-//https://concisecoder.io/2019/05/11/creating-a-static-http-server-with-rust-part-1/
